@@ -1,3 +1,5 @@
+import json
+
 from depot.fields.sqlalchemy import UploadedFileField as UploadedFileFieldBase
 from onegov.core.crypto import random_token
 from onegov.core.orm import Base
@@ -8,6 +10,7 @@ from onegov.core.utils import normalize_for_url
 from onegov.file.attachments import ProcessedUploadedFile
 from onegov.file.filters import OnlyIfImage, WithThumbnailFilter
 from onegov.file.filters import OnlyIfPDF, WithPDFThumbnailFilter
+from pathlib import Path
 from sqlalchemy import Boolean, Column, Index, Text
 from sqlalchemy_utils import observes
 
@@ -150,3 +153,23 @@ class File(Base, Associable, TimestampMixin):
             return None
 
         return self.reference[name]['id']
+
+    def _update_metadata(self, **metadata):
+        """ Updates the underlying metadata with the give values. This
+        operats on low-level interfaces of Depot and assumes local storage.
+
+        You should have a good reason for using this.
+
+        """
+        path = Path(self.reference.file._metadata_path)
+
+        with path.open('r') as f:
+            stored_metadata = json.load(f)
+
+        # only support upating existing values - do not create new ones
+        for key in metadata:
+            if key in stored_metadata:
+                stored_metadata[key] = metadata[key]
+
+        with path.open('w') as f:
+            json.dump(f, stored_metadata)
