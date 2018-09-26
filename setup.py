@@ -37,11 +37,12 @@ setup(
         'filedepot>=0.4.1',
         'lxml',
         'more.transaction',
+        'pdftotext',
         'pillow',
         'python-magic',
         'sqlalchemy',
         'sqlalchemy-utils',
-        'webob'
+        'webob',
     ],
     extras_require=dict(
         test=[

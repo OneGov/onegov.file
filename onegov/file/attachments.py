@@ -1,4 +1,5 @@
 import hashlib
+import pdftotext
 
 from depot.fields.upload import UploadedFile
 from depot.io import utils
@@ -67,12 +68,22 @@ def sanitize_svg_images(file, content, content_type):
     return content
 
 
+def extract_pdf_text(content):
+    return '\n'.join(pdftotext.PDF(content)).strip()
+
+
+def store_extract(file, content, content_type):
+    if content_type == 'application/pdf':
+        file.extract = extract_pdf_text(content)
+
+
 class ProcessedUploadedFile(UploadedFile):
 
     processors = (
         store_checksum,
         limit_and_store_image_size,
-        sanitize_svg_images
+        sanitize_svg_images,
+        store_extract,
     )
 
     def process_content(self, content, filename=None, content_type=None):

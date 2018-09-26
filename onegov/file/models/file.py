@@ -16,6 +16,7 @@ from sqlalchemy import event
 from sqlalchemy.orm import object_session, Session
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_utils import observes
+from sqlalchemy.orm import deferred
 
 
 class UploadedFileField(UploadedFileFieldBase):
@@ -115,6 +116,11 @@ class File(Base, Associable, TimestampMixin):
     #: strictly a check of file duplicates, not protection against tampering
     checksum = Column(Text, nullable=True, index=True)
 
+    #: the content of the given file as text, if it can be extracted
+    #: (it is important that this column be loaded deferred by default, lest
+    #: we load massive amounts of text on simple queries)
+    extract = deferred(Column(Text, nullable=True))
+
     __mapper_args__ = {
         'polymorphic_on': 'type'
     }
@@ -125,7 +131,11 @@ class File(Base, Associable, TimestampMixin):
 
     @observes('reference')
     def reference_observer(self, reference):
-        self.checksum = self.reference.get('checksum')
+        if 'checksum' in self.reference:
+            self.checksum = self.reference['checksum']
+
+        if 'extract' in self.reference:
+            self.extract = self.reference['extract']
 
     @observes('name')
     def name_observer(self, name):
@@ -206,6 +216,6 @@ def update_metadata_after_commit(session):
 
 
 @event.listens_for(Session, 'after_soft_rollback')
-def discard_metadata_on_rollback(session):
+def discard_metadata_on_rollback(session, previous_transaction):
     if 'pending_metadata_changes' in session.info:
         del session.info['pending_metadata_changes']

@@ -101,10 +101,8 @@ class DepotApp(App):
         if not shutil.which('gs'):
             raise RuntimeError("onegov.file requires ghostscript")
 
-        if self.depot_backend == 'depot.io.local.LocalFileStorage':
-            assert os.path.isdir(self.depot_storage_path), """
-                The depot storage path must exist.
-            """
+        if not shutil.which('pdftotext'):
+            raise RuntimeError("onegov.file requires pdftotext (poppler)")
 
         if self.frontend_cache_buster:
 

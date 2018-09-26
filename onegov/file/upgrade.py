@@ -10,7 +10,7 @@ from onegov.core.orm.types import UTCDateTime
 from onegov.core.upgrade import upgrade_task
 from onegov.core.utils import normalize_for_url
 from onegov.file import File, FileCollection
-from onegov.file.attachments import get_svg_size_or_default
+from onegov.file.attachments import get_svg_size_or_default, extract_pdf_text
 from onegov.file.filters import WithPDFThumbnailFilter
 from onegov.file.integration import DepotApp
 from onegov.file.utils import get_image_size, content_type_from_fileobj
@@ -170,3 +170,17 @@ def reclassify_office_documents(context):
     for f in files.filter(File.name.op('~*')(r'^.*\.(docx|xlsx|pptx)$')):
         content_type = content_type_from_fileobj(f.reference.file)
         f._update_metadata(content_type=content_type)
+
+
+@upgrade_task('Add extract column')
+def add_extract_column(context):
+    context.operations.add_column(
+        'files', Column('extract', Text, nullable=True))
+
+
+@upgrade_task('Extract pdf text of existing files')
+def extract_pdf_text_of_existing_files(context):
+    pdfs = FileCollection(context.session).by_content_type('application/pdf')
+
+    for pdf in pdfs:
+        pdf.extract = extract_pdf_text(pdf.reference.file)
