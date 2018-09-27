@@ -101,9 +101,6 @@ class DepotApp(App):
         if not shutil.which('gs'):
             raise RuntimeError("onegov.file requires ghostscript")
 
-        if not shutil.which('pdftotext'):
-            raise RuntimeError("onegov.file requires pdftotext (poppler)")
-
         if self.frontend_cache_buster:
 
             @self.session_manager.on_update.connect_via(ANY, weak=False)
