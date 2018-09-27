@@ -34,6 +34,7 @@ setup(
     python_requires='>=3.6',
     install_requires=[
         'onegov.core>=0.4.0',
+        'onegov.search',
         'filedepot>=0.4.1',
         'lxml',
         'more.transaction',

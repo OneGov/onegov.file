@@ -68,13 +68,14 @@ def sanitize_svg_images(file, content, content_type):
     return content
 
 
-def extract_pdf_text(content):
-    return '\n'.join(pdftotext.PDF(content)).strip()
+def extract_pdf_info(content):
+    pages = pdftotext.PDF(content)
+    return len(pages), '\n'.join(pages).strip()
 
 
-def store_extract(file, content, content_type):
+def store_extract_and_pages(file, content, content_type):
     if content_type == 'application/pdf':
-        file.extract = extract_pdf_text(content)
+        file.pages, file.extract = extract_pdf_info(content)
 
 
 class ProcessedUploadedFile(UploadedFile):
@@ -83,7 +84,7 @@ class ProcessedUploadedFile(UploadedFile):
         store_checksum,
         limit_and_store_image_size,
         sanitize_svg_images,
-        store_extract,
+        store_extract_and_pages,
     )
 
     def process_content(self, content, filename=None, content_type=None):

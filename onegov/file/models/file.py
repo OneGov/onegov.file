@@ -10,13 +10,15 @@ from onegov.core.utils import normalize_for_url
 from onegov.file.attachments import ProcessedUploadedFile
 from onegov.file.filters import OnlyIfImage, WithThumbnailFilter
 from onegov.file.filters import OnlyIfPDF, WithPDFThumbnailFilter
+from onegov.file.utils import extension_for_content_type
 from pathlib import Path
-from sqlalchemy import Boolean, Column, Index, Text
+from sqlalchemy import Boolean, Column, Index, Integer, Text
 from sqlalchemy import event
 from sqlalchemy.orm import object_session, Session
 from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy_utils import observes
 from sqlalchemy.orm import deferred
+from onegov.search import ORMSearchable
 
 
 class UploadedFileField(UploadedFileFieldBase):
@@ -35,6 +37,32 @@ class UploadedFileField(UploadedFileFieldBase):
     def process_result_value(self, value, dialect):
         if value:
             return self._upload_type(value)
+
+
+class SearchableFile(ORMSearchable):
+    """ Files are not made available for elasticsearch by default. This is
+    for security reasons - files are public by default but one has to know
+    the url (a very long id).
+
+    Search might lead to a disclosure of all files, which is why files
+    can only be searched if they are of a different polymorphic subclass
+    and use this mixin.
+
+    """
+
+    es_properties = {
+        'name': {'type': 'text'},
+        'note': {'type': 'localized'},
+        'extract': {'type': 'localized'}
+    }
+
+    @property
+    def es_suggestion(self):
+        return self.name
+
+    @property
+    def es_public(self):
+        return self.published
 
 
 class File(Base, Associable, TimestampMixin):
@@ -121,6 +149,9 @@ class File(Base, Associable, TimestampMixin):
     #: we load massive amounts of text on simple queries)
     extract = deferred(Column(Text, nullable=True))
 
+    #: the number of pages in the given file if known
+    pages = Column(Integer, nullable=True)
+
     __mapper_args__ = {
         'polymorphic_on': 'type'
     }
@@ -132,10 +163,13 @@ class File(Base, Associable, TimestampMixin):
     @observes('reference')
     def reference_observer(self, reference):
         if 'checksum' in self.reference:
-            self.checksum = self.reference['checksum']
+            self.checksum = self.reference.pop('checksum')
 
         if 'extract' in self.reference:
-            self.extract = self.reference['extract']
+            self.extract = self.reference.pop('extract')
+
+        if 'pages' in self.reference:
+            self.pages = self.reference.pop('pages')
 
     @observes('name')
     def name_observer(self, name):
@@ -153,6 +187,28 @@ class File(Base, Associable, TimestampMixin):
         """
 
         return self.virtual_file_id or self.reference.file_id
+
+    @property
+    def claimed_extension(self):
+        """ Returns the extension as defined by the file name or by the
+        content type (whatever is found first in this order).
+
+        Note that this extension could therefore not be correct. It is mainly
+        meant for display purposes.
+
+        If you need to know the type of a file you should use the
+        content type stored on the reference.
+
+        """
+        return extension_for_content_type(
+            self.reference['content_type'], self.name)
+
+    @property
+    def name_without_extension(self):
+        if '.' in self.name.rstrip()[-5:]:
+            return self.name.rsplit('.', 1)[0]
+
+        return self.name
 
     def get_thumbnail_id(self, size):
         """ Returns the thumbnail id with the given size (e.g. 'small').
