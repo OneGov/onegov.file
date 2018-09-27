@@ -15,7 +15,7 @@ addons:
   apt:
     packages:
       - ghostscript
-      - poppler-cpp-devel
+      - libpoppler-cpp-dev
 
 install:
     - pip install tox
