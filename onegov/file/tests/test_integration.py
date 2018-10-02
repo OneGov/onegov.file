@@ -1,16 +1,18 @@
 import morepath
 import os
 import pytest
+import textwrap
 import transaction
 
 from datetime import datetime
 from depot.manager import DepotManager
+from io import BytesIO
 from onegov.core import Framework
-from onegov.core.utils import scan_morepath_modules
+from onegov.core.security.rules import has_permission_not_logged_in
+from onegov.core.utils import scan_morepath_modules, module_path
 from onegov.file import DepotApp, FileCollection
 from onegov.file.integration import SUPPORTED_STORAGE_BACKENDS
 from onegov_testing.utils import create_image
-from onegov.core.security.rules import has_permission_not_logged_in
 from time import sleep
 from webtest import TestApp as Client
 
@@ -23,6 +25,22 @@ def app(request, postgres_dsn, temporary_path, redis_url):
             f'#!/bin/bash',
             f'touch {temporary_path}/$1'
         )))
+
+    signing_services = (temporary_path / 'signing-services')
+    signing_services.mkdir()
+
+    cert_file = module_path('onegov.file', 'tests/fixtures/test.crt')
+    cert_key = module_path('onegov.file', 'tests/fixtures/test.crt')
+
+    with (signing_services / '__default__.yml').open('w') as f:
+        f.write(textwrap.dedent(f"""
+            name: swisscom_ais
+            parameters:
+                customer: foo
+                key: bar
+                cert_file: {cert_file}
+                cert_key: {cert_key}
+        """))
 
     os.chmod(temporary_path / 'bust', 0o775)
 
@@ -47,7 +65,8 @@ def app(request, postgres_dsn, temporary_path, redis_url):
         depot_backend=backend,
         depot_storage_path=str(temporary_path),
         frontend_cache_buster=f'{temporary_path}/bust',
-        redis_url=redis_url
+        redis_url=redis_url,
+        signing_services=str(signing_services)
     )
 
     app.namespace = 'apps'
@@ -246,3 +265,15 @@ def test_cache_control(app):
     app.anonymous_access = True
     response = client.get('/storage/{}'.format(fid))
     assert response.headers['Cache-Control'] == 'private'
+
+
+def test_signing_service(app):
+    ensure_correct_depot(app)
+
+    path = module_path('onegov.file', 'tests/fixtures/example.pdf')
+    vcr = module_path('onegov.file', 'tests/fixtures/ais-request-success.json')
+
+    with cassette.play(vcr):
+        with open(path, 'rb') as infile:
+            outfile = BytesIO()
+            app.signing_service.sign(infile, outfile)

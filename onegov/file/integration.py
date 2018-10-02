@@ -3,6 +3,7 @@ import os.path
 import shlex
 import shutil
 import subprocess
+import yaml
 
 from blinker import ANY
 from contextlib import contextmanager
@@ -14,6 +15,7 @@ from onegov.core.custom import json
 from onegov.core.security import Private, Public
 from onegov.file.collection import FileCollection
 from onegov.file.models import File
+from onegov.file.sign import SigningService
 from pathlib import Path
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -82,6 +84,28 @@ class DepotApp(App):
             Note that this script is optional. If omitted, the cache busting
             turns into a noop.
 
+        :signing_services: Contains signing service configs.
+
+            Each application gets exactly one signing service.
+
+            This integration class will take care of instantiating the
+            signing service and offer it through `self.signing_service`.
+
+            The signing service can be used with any file, though there is
+            first-class support for signing onegov.file models.
+
+            Signing services are implemented using sublcasses of the
+            :class:`onegov.file.sign.SigningService`. Each signature
+            service class is configured using a single yaml file which is
+            stored in the signature config path.
+
+            By default we use the '__default__.yaml' config. Alternatively
+            we can create separate configs for various application ids.
+
+            For example, we might create a `onegov_town-govikon.yaml`, which
+            would take precedence over the default config, if the application
+            with the id `onegov_town-govikon` would use the signing service.
+
         """
 
         self.depot_backend = cfg.get('depot_backend')
@@ -90,6 +114,11 @@ class DepotApp(App):
         self.frontend_cache_buster = cfg.get('frontend_cache_buster')
         self.frontend_cache_bust_delay = cfg.get(
             'frontend_cache_bust_delay', 5)
+
+        self.signing_services = {}
+        if 'signing_services' in cfg:
+            self.signing_services = Path(
+                cfg['signing_services'])
 
         if self.depot_backend not in SUPPORTED_STORAGE_BACKENDS:
             raise RuntimeError("Depot app without valid storage backend")
@@ -100,6 +129,9 @@ class DepotApp(App):
 
         if not shutil.which('gs'):
             raise RuntimeError("onegov.file requires ghostscript")
+
+        if not shutil.which('java'):
+            raise RuntimeError("onegov.file requires java")
 
         if self.frontend_cache_buster:
 
@@ -160,6 +192,37 @@ class DepotApp(App):
         cmd = f'sleep {self.frontend_cache_bust_delay} && {bin} {fid}'
 
         subprocess.Popen(cmd, close_fds=True, shell=True)
+
+    @property
+    def signing_service_config(self):
+        if not self.signing_services:
+            raise RuntimeError("No signing service config path set")
+
+        paths = (
+            self.signing_services / f'{self.application_id}.yml',
+            self.signing_services / f'__default__.yml',
+        )
+
+        for path in paths:
+            if path.exists():
+                with path.open('r') as f:
+                    return yaml.load(f.read())
+
+        raise RuntimeError(
+            f"No service config found at {self.signing_services}")
+
+    @property
+    def signing_service(self):
+
+        # it is somewhat inefficient to keep multiple instances of the same
+        # service around as many services can have the same config - however
+        # it prevents accidental leaks of state between applications
+        if self.application_id not in self.signing_services:
+
+            self.signing_services[self.application_id] \
+                = SigningService.by_config(self.signing_service_config)
+
+        return self.signing_services[self.application_id]
 
     def clear_depot_cache(self):
         DepotManager._aliases.clear()
