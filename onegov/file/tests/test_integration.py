@@ -342,6 +342,8 @@ def test_sign_file(app):
     assert pdf.signature_metadata['new_digest']
     assert pdf.signature_metadata['request_id'].startswith('swisscom_ais/foo/')
 
+    assert len(pdf.reference.file.read()) > 0
+
     timestamp = isodate.parse_datetime(pdf.signature_metadata['timestamp'])
     now = sedate.utcnow()
     assert (now - timedelta(seconds=10)) <= timestamp <= now

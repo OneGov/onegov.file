@@ -214,6 +214,7 @@ class DepotApp(App):
             request_id = self.signing_service.sign(file.reference.file, signed)
             new_digest = digest(signed)
 
+            signed.seek(0)
             self.bound_depot.replace(
                 file.reference.file_id,
                 content=signed,
