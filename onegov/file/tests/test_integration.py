@@ -330,7 +330,7 @@ def test_sign_file(app):
         old_digest = hashlib.sha256(f.read()).hexdigest()
 
     transaction.commit()
-    pdf = app.session().query(File).one()user
+    pdf = app.session().query(File).one()
     app.sign_file(pdf, signee='admin@example.org')
 
     transaction.commit()
