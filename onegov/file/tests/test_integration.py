@@ -1,19 +1,23 @@
 import AIS
+import hashlib
+import isodate
 import morepath
 import os
 import pytest
+import sedate
 import textwrap
 import transaction
 import vcr
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from depot.manager import DepotManager
 from io import BytesIO
 from onegov.core import Framework
 from onegov.core.security.rules import has_permission_not_logged_in
 from onegov.core.utils import scan_morepath_modules, module_path, is_uuid
-from onegov.file import DepotApp, FileCollection
+from onegov.file import DepotApp, File, FileCollection
 from onegov.file.integration import SUPPORTED_STORAGE_BACKENDS
+from onegov.user import User
 from onegov_testing.utils import create_image
 from time import sleep
 from webtest import TestApp as Client
@@ -307,3 +311,55 @@ def test_ais_error(app):
             with pytest.raises(AIS.exceptions.AuthenticationFailed):
                 outfile = BytesIO()
                 app.signing_service.sign(infile, outfile)
+
+
+@vcr.use_cassette(
+    module_path('onegov.file', 'tests/cassettes/ais-success.json'),
+    record_mode='none'
+)
+def test_sign_file(app, test_password):
+    ensure_correct_depot(app)
+
+    transaction.begin()
+
+    app.session().add(User(
+        username='admin@example.org',
+        password_hash=test_password,
+        role='admin'
+    ))
+
+    path = module_path('onegov.file', 'tests/fixtures/sample.pdf')
+
+    with open(path, 'rb') as f:
+        app.session().add(File(name='sample.pdf', reference=f))
+
+    with open(path, 'rb') as f:
+        old_digest = hashlib.sha256(f.read()).hexdigest()
+
+    transaction.commit()
+    pdf = app.session().query(File).one()
+
+    with pytest.raises(RuntimeError) as e:
+        app.sign_file(pdf, signee='foo@example.org')
+
+    assert "must be a valid username" in str(e)
+
+    app.sign_file(pdf, signee='admin@example.org')
+
+    transaction.commit()
+    pdf = app.session().query(File).one()
+
+    assert pdf.signed
+    assert pdf.signature_metadata['signee'] == 'admin@example.org'
+    assert pdf.signature_metadata['old_digest'] == old_digest
+    assert pdf.signature_metadata['new_digest']
+    assert pdf.signature_metadata['request_id'].startswith('swisscom_ais/foo/')
+
+    timestamp = isodate.parse_datetime(pdf.signature_metadata['timestamp'])
+    now = sedate.utcnow()
+    assert (now - timedelta(seconds=10)) <= timestamp <= now
+
+    with pytest.raises(RuntimeError) as e:
+        app.sign_file(pdf, signee='admin@example.org')
+
+    assert "already been signed" in str(e)

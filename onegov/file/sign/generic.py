@@ -1,7 +1,8 @@
 import os.path
 
-from contextlib import contextmanager
-from tempfile import TemporaryFile
+from contextlib import contextmanager, suppress
+from tempfile import mkstemp
+from io import UnsupportedOperation
 
 
 class SigningService(object):
@@ -88,15 +89,20 @@ class SigningService(object):
         somewhere on the disk during the lifetime of the context.
 
         """
-        file.seek(0)
+        with suppress(UnsupportedOperation):
+            file.seek(0)
 
         if os.path.exists(file.name):
             yield file
         else:
-            with TemporaryFile('rb+') as output:
+            fd, path = mkstemp()
+
+            with open(path, 'rb+') as output:
                 for chunk in iter(lambda: file.read(4096), b''):
                     output.write(chunk)
 
                 output.seek(0)
 
                 yield output
+
+            os.unlink(path)

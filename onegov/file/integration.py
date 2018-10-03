@@ -16,8 +16,13 @@ from onegov.core.security import Private, Public
 from onegov.file.collection import FileCollection
 from onegov.file.models import File
 from onegov.file.sign import SigningService
+from onegov.file.utils import digest
+from onegov.user import UserCollection
 from pathlib import Path
+from sedate import utcnow
+from sqlalchemy.orm import object_session
 from sqlalchemy.orm.attributes import flag_modified
+from tempfile import SpooledTemporaryFile
 
 
 SUPPORTED_STORAGE_BACKENDS = (
@@ -192,6 +197,45 @@ class DepotApp(App):
         cmd = f'sleep {self.frontend_cache_bust_delay} && {bin} {fid}'
 
         subprocess.Popen(cmd, close_fds=True, shell=True)
+
+    def sign_file(self, file, signee):
+        """ Signs the given file and stores metadata about that process.
+
+        During signing the stored file is replaced with the signed version.
+
+        """
+
+        if file.signed:
+            raise RuntimeError(f"File {file.id} has already been signed")
+
+        if not UserCollection(self.session()).by_username(signee):
+            raise RuntimeError(f"The signee must be a valid username")
+
+        mb = 1024 ** 2
+
+        with SpooledTemporaryFile(max_size=16 * mb, mode='wb') as signed:
+            old_digest = digest(file.reference.file)
+            request_id = self.signing_service.sign(file.reference.file, signed)
+            new_digest = digest(signed)
+
+            self.bound_depot.replace(
+                file.reference.file_id,
+                content=signed,
+                filename=file.name,
+                content_type=file.reference['content_type']
+            )
+
+        file.signature_metadata = {
+            'old_digest': old_digest,
+            'new_digest': new_digest,
+            'signee': signee,
+            'timestamp': utcnow().isoformat(),
+            'request_id': request_id
+        }
+
+        file.signed = True
+
+        object_session(file).flush()
 
     @property
     def signing_service_config(self):

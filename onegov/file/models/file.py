@@ -107,6 +107,17 @@ class File(Base, Associable, TimestampMixin):
     #: something we ignore)
     signed = Column(Boolean, nullable=False, default=False)
 
+    #: the metadata of the signature - this should include the following
+    #: data::
+    #:
+    #:  - old_digest: The sha-256 hash before the file was signed
+    #:  - new_digest: The sha-256 hash after the file was signed
+    #:  - signee: The username of the user that signed the document
+    #:  - timestamp: The time the document was signed in UTC
+    #:  - request_id: A unique identifier by the signing service
+    #:
+    signature_metadata = deferred(Column(JSON, nullable=True))
+
     #: the type of the file, this can be used to create custom polymorphic
     #: subclasses. See `<http://docs.sqlalchemy.org/en/improve_toc/
     #: orm/extensions/declarative/inheritance.html>`_.
