@@ -115,10 +115,10 @@ class DepotApp(App):
         self.frontend_cache_bust_delay = cfg.get(
             'frontend_cache_bust_delay', 5)
 
-        self.signing_services = {}
+        self.spawned_signing_services = {}
+
         if 'signing_services' in cfg:
-            self.signing_services = Path(
-                cfg['signing_services'])
+            self.signing_services = Path(cfg['signing_services'])
 
         if self.depot_backend not in SUPPORTED_STORAGE_BACKENDS:
             raise RuntimeError("Depot app without valid storage backend")
@@ -217,12 +217,12 @@ class DepotApp(App):
         # it is somewhat inefficient to keep multiple instances of the same
         # service around as many services can have the same config - however
         # it prevents accidental leaks of state between applications
-        if self.application_id not in self.signing_services:
+        if self.application_id not in self.spawned_signing_services:
 
-            self.signing_services[self.application_id] \
-                = SigningService.by_config(self.signing_service_config)
+            self.spawned_signing_services[self.application_id] \
+                = SigningService.for_config(self.signing_service_config)
 
-        return self.signing_services[self.application_id]
+        return self.spawned_signing_services[self.application_id]
 
     def clear_depot_cache(self):
         DepotManager._aliases.clear()

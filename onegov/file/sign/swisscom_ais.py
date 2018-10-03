@@ -17,7 +17,6 @@ class SwisscomAIS(SigningService, service_name='swisscom_ais'):
         self.client = AIS(customer, key_static, cert_file, cert_key)
 
     def sign(self, infile, outfile):
-
         with self.materialise(infile) as fp:
             pdf = PDF(fp.name)
             self.client.sign_one_pdf(pdf)

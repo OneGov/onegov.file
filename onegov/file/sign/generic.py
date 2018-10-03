@@ -16,7 +16,7 @@ class SigningService(object):
         super().__init_subclass__(**kwargs)
 
     @staticmethod
-    def for_config(self, config):
+    def for_config(config):
         """ Spawns a service instance using the given config. """
 
         return SigningService.registry[config['name']](
@@ -64,6 +64,7 @@ class SigningService(object):
         somewhere on the disk during the lifetime of the context.
 
         """
+        file.seek(0)
 
         if os.path.exists(file.name):
             yield file

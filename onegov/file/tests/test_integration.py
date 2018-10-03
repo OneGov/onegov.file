@@ -1,8 +1,10 @@
+import AIS
 import morepath
 import os
 import pytest
 import textwrap
 import transaction
+import vcr
 
 from datetime import datetime
 from depot.manager import DepotManager
@@ -37,7 +39,7 @@ def app(request, postgres_dsn, temporary_path, redis_url):
             name: swisscom_ais
             parameters:
                 customer: foo
-                key: bar
+                key_static: bar
                 cert_file: {cert_file}
                 cert_key: {cert_key}
         """))
@@ -267,13 +269,36 @@ def test_cache_control(app):
     assert response.headers['Cache-Control'] == 'private'
 
 
-def test_signing_service(app):
+def test_ais_success(app):
     ensure_correct_depot(app)
 
     path = module_path('onegov.file', 'tests/fixtures/example.pdf')
-    vcr = module_path('onegov.file', 'tests/fixtures/ais-request-success.json')
+    tape = module_path('onegov.file', 'tests/cassettes/ais-success.json')
 
-    with cassette.play(vcr):
+    # recordings were shamelessly copied from AIS.py's unit tests
+    with vcr.use_cassette(tape, record_mode='none'):
         with open(path, 'rb') as infile:
+            assert b'/SigFlags' not in infile.read()
+            infile.seek(0)
+
             outfile = BytesIO()
             app.signing_service.sign(infile, outfile)
+
+            outfile.seek(0)
+            assert b'/SigFlags' in outfile.read()
+
+        outfile.seek(0)
+
+
+def test_ais_error(app):
+    ensure_correct_depot(app)
+
+    path = module_path('onegov.file', 'tests/fixtures/example.pdf')
+    tape = module_path('onegov.file', 'tests/cassettes/ais-error.json')
+
+    # recordings were shamelessly copied from AIS.py's unit tests
+    with vcr.use_cassette(tape, record_mode='none'):
+        with open(path, 'rb') as infile:
+            with pytest.raises(AIS.exceptions.AuthenticationFailed):
+                outfile = BytesIO()
+                app.signing_service.sign(infile, outfile)
