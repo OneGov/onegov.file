@@ -117,7 +117,7 @@ class DepotApp(App):
 
         self.frontend_cache_buster = cfg.get('frontend_cache_buster')
         self.frontend_cache_bust_delay = cfg.get(
-            'frontend_cache_bust_delay', 5)
+            'frontend_cache_bust_delay', 2)
 
         self.spawned_signing_services = {}
 
