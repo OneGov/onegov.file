@@ -11,7 +11,7 @@ from depot.manager import DepotManager
 from io import BytesIO
 from onegov.core import Framework
 from onegov.core.security.rules import has_permission_not_logged_in
-from onegov.core.utils import scan_morepath_modules, module_path
+from onegov.core.utils import scan_morepath_modules, module_path, is_uuid
 from onegov.file import DepotApp, FileCollection
 from onegov.file.integration import SUPPORTED_STORAGE_BACKENDS
 from onegov_testing.utils import create_image
@@ -282,7 +282,12 @@ def test_ais_success(app):
             infile.seek(0)
 
             outfile = BytesIO()
-            app.signing_service.sign(infile, outfile)
+            request_id = app.signing_service.sign(infile, outfile)
+
+            name, customer, id = request_id.split('/')
+            assert name == 'swisscom_ais'
+            assert customer == 'foo'
+            assert is_uuid(id)
 
             outfile.seek(0)
             assert b'/SigFlags' in outfile.read()

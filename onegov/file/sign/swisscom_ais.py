@@ -1,11 +1,21 @@
 import os
 
-from AIS import AIS, PDF
+from AIS import AIS as AISBase
+from AIS import PDF
 from onegov.file.sign.generic import SigningService
+from uuid import uuid4
+
+
+class AIS(AISBase):
+    """ Customises AIS to always remember the last issued request-id. """
+
+    def _request_id(self):
+        self.last_request_id = uuid4().hex
+        return self.last_request_id
 
 
 class SwisscomAIS(SigningService, service_name='swisscom_ais'):
-    """ A generic interface for various file signing services. """
+    """ Sign PDFs using Swisscom's All-In Signing Service. """
 
     def __init__(self, customer, key_static, cert_file, cert_key):
         if not os.path.exists(cert_file):
@@ -14,6 +24,7 @@ class SwisscomAIS(SigningService, service_name='swisscom_ais'):
         if not os.path.exists(cert_key):
             raise FileNotFoundError(cert_key)
 
+        self.customer = customer
         self.client = AIS(customer, key_static, cert_file, cert_key)
 
     def sign(self, infile, outfile):
@@ -24,3 +35,5 @@ class SwisscomAIS(SigningService, service_name='swisscom_ais'):
         with open(pdf.out_filename, 'rb') as fp:
             for chunk in iter(lambda: fp.read(4096), b''):
                 outfile.write(chunk)
+
+        return f'swisscom_ais/{self.customer}/{self.client.last_request_id}'

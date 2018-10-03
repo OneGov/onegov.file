@@ -33,12 +33,23 @@ class SigningService(object):
                 foo: bar
                 bar: foo
 
+        This function may be overwritten by the subclass with concrete
+        arguemnts. For example::
+
+            class MyService(SigningService, name='my_service'):
+
+                def __init__(self, user, password):
+                    pass
+
         """
 
         self.parameters = parameters
 
     def sign(self, infile, outfile):
         """ Signs the input file and writes it to the given output file.
+
+        Arguments
+        =========
 
         If the input-file exists on disk, its ``file.name`` attribute points
         to an existing path.
@@ -53,6 +64,19 @@ class SigningService(object):
         But it would be better to do thiss::
 
             def sign(self, infile, outfile, foo='bar')
+
+        Return Value
+        ============
+
+        The sign function *must* return a unique request id for each signed
+        file. This function should be composed of the service name and a
+        unique identifier. For example: 'my_service/0b86854'. Using this
+        identifier it should be possible to query the signing service backend
+        for more information (in case we ever need to investigate).
+
+        It is up to the signing service to know what should be part of this
+        unique identifer. The only thing that can't be part of the identifer
+        are secrets.
 
         """
 
