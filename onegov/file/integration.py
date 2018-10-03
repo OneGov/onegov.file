@@ -17,7 +17,6 @@ from onegov.file.collection import FileCollection
 from onegov.file.models import File
 from onegov.file.sign import SigningService
 from onegov.file.utils import digest
-from onegov.user import UserCollection
 from pathlib import Path
 from sedate import utcnow
 from sqlalchemy.orm import object_session
@@ -207,9 +206,6 @@ class DepotApp(App):
 
         if file.signed:
             raise RuntimeError(f"File {file.id} has already been signed")
-
-        if not UserCollection(self.session()).by_username(signee):
-            raise RuntimeError(f"The signee must be a valid username")
 
         mb = 1024 ** 2
 

@@ -35,7 +35,6 @@ setup(
     install_requires=[
         'AIS.py',
         'onegov.core>=0.4.0',
-        'onegov.user',
         'onegov.search',
         'filedepot>=0.4.1',
         'lxml',

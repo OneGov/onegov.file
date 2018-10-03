@@ -17,7 +17,6 @@ from onegov.core.security.rules import has_permission_not_logged_in
 from onegov.core.utils import scan_morepath_modules, module_path, is_uuid
 from onegov.file import DepotApp, File, FileCollection
 from onegov.file.integration import SUPPORTED_STORAGE_BACKENDS
-from onegov.user import User
 from onegov_testing.utils import create_image
 from time import sleep
 from webtest import TestApp as Client
@@ -317,16 +316,10 @@ def test_ais_error(app):
     module_path('onegov.file', 'tests/cassettes/ais-success.json'),
     record_mode='none'
 )
-def test_sign_file(app, test_password):
+def test_sign_file(app):
     ensure_correct_depot(app)
 
     transaction.begin()
-
-    app.session().add(User(
-        username='admin@example.org',
-        password_hash=test_password,
-        role='admin'
-    ))
 
     path = module_path('onegov.file', 'tests/fixtures/sample.pdf')
 
@@ -337,13 +330,7 @@ def test_sign_file(app, test_password):
         old_digest = hashlib.sha256(f.read()).hexdigest()
 
     transaction.commit()
-    pdf = app.session().query(File).one()
-
-    with pytest.raises(RuntimeError) as e:
-        app.sign_file(pdf, signee='foo@example.org')
-
-    assert "must be a valid username" in str(e)
-
+    pdf = app.session().query(File).one()user
     app.sign_file(pdf, signee='admin@example.org')
 
     transaction.commit()
