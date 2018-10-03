@@ -42,6 +42,9 @@ class SigningService(object):
                 def __init__(self, user, password):
                     pass
 
+        During initialisiation through onegov.file.integration (and only then),
+        the current path is set to the path of the config file.
+
         """
 
         self.parameters = parameters

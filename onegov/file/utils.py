@@ -1,7 +1,8 @@
 import hashlib
 import magic
+import os
 
-from contextlib import suppress
+from contextlib import contextmanager, suppress
 from depot.io.utils import FileIntent
 from mimetypes import guess_extension
 from io import IOBase, BytesIO, UnsupportedOperation
@@ -110,6 +111,14 @@ def digest(fileobj, type='sha256', chunksize=4096):
         digest.update(chunk)
 
     return digest.hexdigest()
+
+
+@contextmanager
+def current_dir(dir):
+    previous = os.getcwd()
+    os.chdir(dir)
+    yield
+    os.chdir(previous)
 
 
 # we don't support *all* the image types PIL supports

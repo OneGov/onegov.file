@@ -36,6 +36,9 @@ class SwisscomAIS(SigningService, service_name='swisscom_ais'):
         if not os.path.exists(cert_key):
             raise FileNotFoundError(cert_key)
 
+        cert_file = os.path.abspath(cert_file)
+        cert_key = os.path.abspath(cert_key)
+
         self.customer = customer
         self.client = AIS(customer, key_static, cert_file, cert_key)
 

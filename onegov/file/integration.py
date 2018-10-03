@@ -16,7 +16,7 @@ from onegov.core.security import Private, Public
 from onegov.file.collection import FileCollection
 from onegov.file.models import File
 from onegov.file.sign import SigningService
-from onegov.file.utils import digest
+from onegov.file.utils import digest, current_dir
 from pathlib import Path
 from sedate import utcnow
 from sqlalchemy.orm import object_session
@@ -259,9 +259,11 @@ class DepotApp(App):
         # service around as many services can have the same config - however
         # it prevents accidental leaks of state between applications
         if self.application_id not in self.spawned_signing_services:
+            config = self.signing_service_config
 
-            self.spawned_signing_services[self.application_id] \
-                = SigningService.for_config(self.signing_service_config)
+            with current_dir(self.signing_services):
+                self.spawned_signing_services[self.application_id] \
+                    = SigningService.for_config(config)
 
         return self.spawned_signing_services[self.application_id]
 
