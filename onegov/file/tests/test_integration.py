@@ -19,7 +19,9 @@ from onegov.file import DepotApp, File, FileCollection
 from onegov.file.integration import SUPPORTED_STORAGE_BACKENDS
 from onegov_testing.utils import create_image
 from time import sleep
+from unittest.mock import patch
 from webtest import TestApp as Client
+from yubico_client import Yubico
 
 
 @pytest.fixture(scope='function', params=SUPPORTED_STORAGE_BACKENDS)
@@ -71,7 +73,9 @@ def app(request, postgres_dsn, temporary_path, redis_url):
         depot_storage_path=str(temporary_path),
         frontend_cache_buster=f'{temporary_path}/bust',
         redis_url=redis_url,
-        signing_services=str(signing_services)
+        signing_services=str(signing_services),
+        yubikey_client_id='foo',
+        yubikey_secret_key='dGhlIHdvcmxkIGlzIGNvbnRyb2xsZWQgYnkgbGl6YXJkcyE='
     )
 
     app.namespace = 'apps'
@@ -331,24 +335,33 @@ def test_sign_file(app):
 
     transaction.commit()
     pdf = app.session().query(File).one()
-    app.sign_file(pdf, signee='admin@example.org')
 
-    transaction.commit()
-    pdf = app.session().query(File).one()
+    token = 'ccccccbcgujhingjrdejhgfnuetrgigvejhhgbkugded'
 
-    assert pdf.signed
-    assert pdf.signature_metadata['signee'] == 'admin@example.org'
-    assert pdf.signature_metadata['old_digest'] == old_digest
-    assert pdf.signature_metadata['new_digest']
-    assert pdf.signature_metadata['request_id'].startswith('swisscom_ais/foo/')
+    with patch.object(Yubico, 'verify') as verify:
+        verify.return_value = True
 
-    assert len(pdf.reference.file.read()) > 0
+        app.sign_file(file=pdf, signee='admin@example.org', token=token)
 
-    timestamp = isodate.parse_datetime(pdf.signature_metadata['timestamp'])
-    now = sedate.utcnow()
-    assert (now - timedelta(seconds=10)) <= timestamp <= now
+        transaction.commit()
+        pdf = app.session().query(File).one()
 
-    with pytest.raises(RuntimeError) as e:
-        app.sign_file(pdf, signee='admin@example.org')
+        assert pdf.signed
+        assert pdf.signature_metadata['signee'] == 'admin@example.org'
+        assert pdf.signature_metadata['old_digest'] == old_digest
+        assert pdf.signature_metadata['new_digest']
+        assert pdf.signature_metadata['token'] == token
+        assert pdf.signature_metadata['token_type'] == 'yubikey'
+        assert pdf.signature_metadata['request_id']\
+            .startswith('swisscom_ais/foo/')
 
-    assert "already been signed" in str(e)
+        assert len(pdf.reference.file.read()) > 0
+
+        timestamp = isodate.parse_datetime(pdf.signature_metadata['timestamp'])
+        now = sedate.utcnow()
+        assert (now - timedelta(seconds=10)) <= timestamp <= now
+
+        with pytest.raises(RuntimeError) as e:
+            app.sign_file(pdf, signee='admin@example.org', token=token)
+
+        assert "already been signed" in str(e)

@@ -14,9 +14,13 @@ from morepath import App
 from onegov.core.custom import json
 from onegov.core.security import Private, Public
 from onegov.file.collection import FileCollection
+from onegov.file.errors import AlreadySignedError
+from onegov.file.errors import InvalidTokenError
+from onegov.file.errors import TokenConfigurationError
 from onegov.file.models import File
 from onegov.file.sign import SigningService
 from onegov.file.utils import digest, current_dir
+from onegov.core.utils import is_valid_yubikey, yubikey_public_id
 from pathlib import Path
 from sedate import utcnow
 from sqlalchemy.orm import object_session
@@ -197,15 +201,51 @@ class DepotApp(App):
 
         subprocess.Popen(cmd, close_fds=True, shell=True)
 
-    def sign_file(self, file, signee):
+    def sign_file(self, file, signee, token, token_type='yubikey'):
         """ Signs the given file and stores metadata about that process.
 
         During signing the stored file is replaced with the signed version.
 
+        :param file:
+
+            The :class:`onegov.file..File` instance to sign.
+
+        :param signee:
+
+            The name of the signee (should be a username).
+
+        :param token:
+
+            The (yubikey) token used to sign the file.
+
+            WARNING: It is the job of the caller to ensure that the yubikey has
+            the right to sign the document (i.e. that it is the right yubikey).
+
+        :param token_type:
+
+            They type of the passed token. Currently only 'yubikey'.
+
         """
 
         if file.signed:
-            raise RuntimeError(f"File {file.id} has already been signed")
+            raise AlreadySignedError(file)
+
+        if token_type == 'yubikey':
+            def is_valid_token(token):
+                if not getattr(self, 'yubikey_client_id', None):
+                    raise TokenConfigurationError(token_type)
+
+                return is_valid_yubikey(
+                    self.yubikey_client_id,
+                    self.yubikey_secret_key,
+                    expected_yubikey_id=yubikey_public_id(token),
+                    yubikey=token
+                )
+        else:
+            raise NotImplementedError(f"Unknown token type: {token_type}")
+
+        if not is_valid_token(token):
+            raise InvalidTokenError(token)
 
         mb = 1024 ** 2
 
@@ -227,7 +267,9 @@ class DepotApp(App):
             'new_digest': new_digest,
             'signee': signee,
             'timestamp': utcnow().isoformat(),
-            'request_id': request_id
+            'request_id': request_id,
+            'token': token,
+            'token_type': token_type
         }
 
         file.signed = True
