@@ -415,3 +415,37 @@ def test_sign_transaction(app, temporary_path):
         assert pdf.signed
         assert hashlib.sha256(pdf.reference.file.read()).hexdigest()\
             != old_digest
+
+
+def test_find_by_content_signed(app, temporary_path):
+    ensure_correct_depot(app)
+
+    tape = module_path('onegov.file', 'tests/cassettes/ais-success.json')
+    path = module_path('onegov.file', 'tests/fixtures/sample.pdf')
+
+    with vcr.use_cassette(tape, record_mode='none'):
+        transaction.begin()
+
+        with open(path, 'rb') as f:
+            app.session().add(File(name='sample.pdf', reference=f))
+
+        transaction.commit()
+
+        pdf = app.session().query(File).one()
+        token = 'ccccccbcgujhingjrdejhgfnuetrgigvejhhgbkugded'
+
+        with patch.object(Yubico, 'verify') as verify:
+            verify.return_value = True
+            app.sign_file(file=pdf, signee='admin@example.org', token=token)
+
+        transaction.commit()
+
+    # after signing we can still lookup the file using the old content
+    files = FileCollection(app.session())
+
+    with open(path, 'rb') as f:
+        assert files.by_content(f).count() == 1
+
+    # and of course by using the content of the signed file
+    pdf = app.session().query(File).one()
+    assert files.by_content(pdf.reference.file.read()).count() == 1
