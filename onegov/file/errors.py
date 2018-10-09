@@ -1,6 +1,6 @@
 class AlreadySignedError(RuntimeError):
     def __init__(self, file):
-        raise RuntimeError(f"File {file.id} has already been signed")
+        super().__init__(f"File {file.id} has already been signed")
 
 
 class InvalidTokenError(RuntimeError):
