@@ -221,6 +221,28 @@ class File(Base, Associable, TimestampMixin):
 
         return self.name
 
+    @property
+    def word_count(self):
+        """ The word-count of this file, if it has an extract. Currently
+        not necessarily super efficient (though unlike many other approaches
+        on stackoverflow this one does not consume much memory).
+
+        """
+        if not self.extract:
+            return 0
+
+        count = 0
+        inside_word = False
+
+        for char in self.extract:
+            if char.isspace():
+                inside_word = False
+            elif not inside_word:
+                count += 1
+                inside_word = True
+
+        return count
+
     def get_thumbnail_id(self, size):
         """ Returns the thumbnail id with the given size (e.g. 'small').
 

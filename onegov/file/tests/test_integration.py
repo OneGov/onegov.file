@@ -316,52 +316,102 @@ def test_ais_error(app):
                 app.signing_service.sign(infile, outfile)
 
 
-@vcr.use_cassette(
-    module_path('onegov.file', 'tests/cassettes/ais-success.json'),
-    record_mode='none'
-)
 def test_sign_file(app):
-    ensure_correct_depot(app)
+    tape = module_path('onegov.file', 'tests/cassettes/ais-success.json')
 
-    transaction.begin()
+    with vcr.use_cassette(tape, record_mode='none'):
+        ensure_correct_depot(app)
 
-    path = module_path('onegov.file', 'tests/fixtures/sample.pdf')
+        transaction.begin()
 
-    with open(path, 'rb') as f:
-        app.session().add(File(name='sample.pdf', reference=f))
+        path = module_path('onegov.file', 'tests/fixtures/sample.pdf')
 
-    with open(path, 'rb') as f:
-        old_digest = hashlib.sha256(f.read()).hexdigest()
+        with open(path, 'rb') as f:
+            app.session().add(File(name='sample.pdf', reference=f))
 
-    transaction.commit()
-    pdf = app.session().query(File).one()
-
-    token = 'ccccccbcgujhingjrdejhgfnuetrgigvejhhgbkugded'
-
-    with patch.object(Yubico, 'verify') as verify:
-        verify.return_value = True
-
-        app.sign_file(file=pdf, signee='admin@example.org', token=token)
+        with open(path, 'rb') as f:
+            old_digest = hashlib.sha256(f.read()).hexdigest()
 
         transaction.commit()
         pdf = app.session().query(File).one()
 
+        token = 'ccccccbcgujhingjrdejhgfnuetrgigvejhhgbkugded'
+
+        with patch.object(Yubico, 'verify') as verify:
+            verify.return_value = True
+
+            app.sign_file(file=pdf, signee='admin@example.org', token=token)
+
+            transaction.commit()
+            pdf = app.session().query(File).one()
+
+            assert pdf.signed
+            assert pdf.reference['content_type'] == 'application/pdf'
+            assert pdf.signature_metadata['signee'] == 'admin@example.org'
+            assert pdf.signature_metadata['old_digest'] == old_digest
+            assert pdf.signature_metadata['new_digest']
+            assert pdf.signature_metadata['token'] == token
+            assert pdf.signature_metadata['token_type'] == 'yubikey'
+            assert pdf.signature_metadata['request_id']\
+                .startswith('swisscom_ais/foo/')
+
+            assert len(pdf.reference.file.read()) > 0
+
+            timestamp = isodate.parse_datetime(
+                pdf.signature_metadata['timestamp'])
+
+            now = sedate.utcnow()
+            assert (now - timedelta(seconds=10)) <= timestamp <= now
+
+            with pytest.raises(RuntimeError) as e:
+                app.sign_file(pdf, signee='admin@example.org', token=token)
+
+            assert "already been signed" in str(e)
+
+
+def test_sign_transaction(app, temporary_path):
+    tape = module_path('onegov.file', 'tests/cassettes/ais-success.json')
+
+    with vcr.use_cassette(tape, record_mode='none'):
+        ensure_correct_depot(app)
+        transaction.begin()
+
+        path = module_path('onegov.file', 'tests/fixtures/sample.pdf')
+
+        with open(path, 'rb') as f:
+            app.session().add(File(name='sample.pdf', reference=f))
+
+        with open(path, 'rb') as f:
+            old_digest = hashlib.sha256(f.read()).hexdigest()
+
+        transaction.commit()
+
+        pdf = app.session().query(File).one()
+
+        token = 'ccccccbcgujhingjrdejhgfnuetrgigvejhhgbkugded'
+
+        with patch.object(Yubico, 'verify') as verify:
+            verify.return_value = True
+            app.sign_file(file=pdf, signee='admin@example.org', token=token)
+            transaction.abort()
+            transaction.begin()
+
+    # we have to put in the cassette again, to 'rewind' it
+    with vcr.use_cassette(tape, record_mode='none'):
+
+        # ensure that aborting a transaction doesn't result in a changed file
+        pdf = app.session().query(File).one()
+        assert not pdf.signed
+        assert hashlib.sha256(pdf.reference.file.read()).hexdigest()\
+            == old_digest
+
+        # only after a proper commit should this work
+        with patch.object(Yubico, 'verify') as verify:
+            verify.return_value = True
+            app.sign_file(file=pdf, signee='admin@example.org', token=token)
+            transaction.commit()
+
+        pdf = app.session().query(File).one()
         assert pdf.signed
-        assert pdf.signature_metadata['signee'] == 'admin@example.org'
-        assert pdf.signature_metadata['old_digest'] == old_digest
-        assert pdf.signature_metadata['new_digest']
-        assert pdf.signature_metadata['token'] == token
-        assert pdf.signature_metadata['token_type'] == 'yubikey'
-        assert pdf.signature_metadata['request_id']\
-            .startswith('swisscom_ais/foo/')
-
-        assert len(pdf.reference.file.read()) > 0
-
-        timestamp = isodate.parse_datetime(pdf.signature_metadata['timestamp'])
-        now = sedate.utcnow()
-        assert (now - timedelta(seconds=10)) <= timestamp <= now
-
-        with pytest.raises(RuntimeError) as e:
-            app.sign_file(pdf, signee='admin@example.org', token=token)
-
-        assert "already been signed" in str(e)
+        assert hashlib.sha256(pdf.reference.file.read()).hexdigest()\
+            != old_digest

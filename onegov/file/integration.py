@@ -7,12 +7,14 @@ import yaml
 
 from blinker import ANY
 from contextlib import contextmanager
+from depot.io.utils import FileIntent
 from depot.manager import DepotManager
 from depot.middleware import FileServeApp
 from more.transaction.main import transaction_tween_factory
 from morepath import App
 from onegov.core.custom import json
 from onegov.core.security import Private, Public
+from onegov.core.utils import is_valid_yubikey, yubikey_public_id
 from onegov.file.collection import FileCollection
 from onegov.file.errors import AlreadySignedError
 from onegov.file.errors import InvalidTokenError
@@ -20,7 +22,6 @@ from onegov.file.errors import TokenConfigurationError
 from onegov.file.models import File
 from onegov.file.sign import SigningService
 from onegov.file.utils import digest, current_dir
-from onegov.core.utils import is_valid_yubikey, yubikey_public_id
 from pathlib import Path
 from sedate import utcnow
 from sqlalchemy.orm import object_session
@@ -206,6 +207,10 @@ class DepotApp(App):
 
         During signing the stored file is replaced with the signed version.
 
+        For example::
+
+            pdf = app.sign_file(pdf, 'info@example.org', 'foo')
+
         :param file:
 
             The :class:`onegov.file..File` instance to sign.
@@ -248,6 +253,7 @@ class DepotApp(App):
             raise InvalidTokenError(token)
 
         mb = 1024 ** 2
+        session = object_session(file)
 
         with SpooledTemporaryFile(max_size=16 * mb, mode='wb') as signed:
             old_digest = digest(file.reference.file)
@@ -255,12 +261,11 @@ class DepotApp(App):
             new_digest = digest(signed)
 
             signed.seek(0)
-            self.bound_depot.replace(
-                file.reference.file_id,
-                content=signed,
+
+            file.reference = FileIntent(
+                fileobj=signed,
                 filename=file.name,
-                content_type=file.reference['content_type']
-            )
+                content_type=file.reference['content_type'])
 
         file.signature_metadata = {
             'old_digest': old_digest,
@@ -273,8 +278,7 @@ class DepotApp(App):
         }
 
         file.signed = True
-
-        object_session(file).flush()
+        session.flush()
 
     @property
     def signing_service_config(self):
